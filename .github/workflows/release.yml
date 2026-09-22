@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+          - os: ubuntu-24.04-arm
+            name: linux-aarch64
+          - os: macos-latest
+            name: macos-aarch64
+          - os: macos-15-intel
+            name: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Versions agree
+        shell: bash
+        run: ./scripts/check-version.sh "${GITHUB_REF_NAME#v}"
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="herdr-fingers-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir -p "dist/$dir"
+          cp target/release/herdr-fingers README.md LICENSE CHANGELOG.md herdr-plugin.toml "dist/$dir/"
+          cp -R examples "dist/$dir/"
+          tar -C dist -czf "dist/$dir.tar.gz" "$dir"
+          (cd dist && shasum -a 256 "$dir.tar.gz" > "$dir.tar.gz.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  release:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The notes are the version's CHANGELOG section; a version without
+        # one falls back to GitHub's generated notes.
+        run: |
+          set -euo pipefail
+          if ./scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > release-notes.md; then
+            notes=(--notes-file release-notes.md)
+          else
+            notes=(--generate-notes)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" "${notes[@]}"
