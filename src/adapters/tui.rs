@@ -16,6 +16,7 @@ use crate::domain::screen::Screen;
 use crate::domain::session::{Key, Modifier, Outcome, Session, Target};
 use crate::domain::settings::{HintPosition, Theme};
 use crate::domain::style::{Color, TextStyle};
+use crate::usecases::ports::{PickView, Picker, PortError};
 
 /// Everything the renderer needs, borrowed for one frame.
 pub struct View<'a> {
@@ -28,6 +29,16 @@ pub struct View<'a> {
 }
 
 const MIN_STATUS_WIDTH: u16 = 24;
+
+/// The real overlay: ratatui on the pane's terminal.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TerminalPicker;
+
+impl Picker for TerminalPicker {
+    fn pick(&mut self, view: &PickView<'_>, session: &mut Session) -> Result<Outcome, PortError> {
+        run(view.screen, session, view.theme, view.geometry, view.notice).map_err(PortError::new)
+    }
+}
 
 /// Runs the overlay until the user picks something or gives up.
 pub fn run(

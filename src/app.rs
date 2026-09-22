@@ -1,73 +1,55 @@
-//! The composition root: one function per CLI subcommand.
+//! The composition root: builds the adapters and hands them to a use case,
+//! one function per CLI subcommand.
 
-use std::collections::BTreeMap;
 use std::io::Read;
 
 use thiserror::Error;
 
-use crate::adapters::actions::{self, ActionContext, ActionError};
+use crate::adapters::clipboard::SystemClipboard;
 use crate::adapters::config::{self, ConfigError};
 use crate::adapters::herdr::{HerdrClient, HerdrError, PluginContext};
-use crate::adapters::{log, tui};
+use crate::adapters::log;
+use crate::adapters::system::SystemLauncher;
+use crate::adapters::tui::{self, TerminalPicker};
 use crate::domain::geometry::{GeometryError, OverlayGeometry};
 use crate::domain::matcher::find_candidates;
 use crate::domain::patterns::{self, PatternError, PatternSet};
 use crate::domain::screen::Screen;
-use crate::domain::session::{Outcome, Session};
+use crate::domain::session::Session;
 use crate::domain::settings::Settings;
-
-/// Environment variable carrying the overlay geometry from `start` to `ui`.
-pub const GEOMETRY_ENV: &str = "HERDR_FINGERS_GEOMETRY";
-/// Environment variable carrying a comma-separated pattern subset.
-pub const PATTERNS_ENV: &str = "HERDR_FINGERS_PATTERNS";
-/// The pane title declared in `herdr-plugin.toml` for the overlay.
-pub const OVERLAY_TITLE: &str = "Fingers";
-const OVERLAY_ENTRYPOINT: &str = "overlay";
+use crate::usecases::pick::{self, Deps, PickError, PickRequest, Picked};
+use crate::usecases::start::{self, GEOMETRY_ENV, PATTERNS_ENV, StartError};
 
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error(transparent)]
     Herdr(#[from] HerdrError),
     #[error(transparent)]
+    Start(#[from] StartError),
+    #[error(transparent)]
+    Pick(#[from] PickError),
+    #[error(transparent)]
     Geometry(#[from] GeometryError),
     #[error(transparent)]
     Pattern(#[from] PatternError),
     #[error(transparent)]
     Config(#[from] ConfigError),
-    #[error(transparent)]
-    Action(#[from] ActionError),
     #[error("terminal error: {0}")]
     Terminal(#[from] std::io::Error),
     #[error("no focused pane: Herdr did not pass HERDR_PANE_ID")]
     NoFocusedPane,
-    #[error("invalid {GEOMETRY_ENV}: {0}")]
-    BadGeometry(serde_json::Error),
     #[error("unknown option `{0}`")]
     UnknownOption(String),
 }
 
-/// `start`: the plugin action. Records where the focused pane sits, then
-/// asks Herdr to open the overlay over it.
+/// `start`: the plugin action.
 pub fn start(args: &[String]) -> Result<(), AppError> {
     let context = PluginContext::from_env();
     let client = HerdrClient::from_env()?;
     let pane_id = context.focused_pane_id.ok_or(AppError::NoFocusedPane)?;
-    if client.pane_label(&pane_id)?.as_deref() == Some(OVERLAY_TITLE) {
-        return Ok(());
-    }
-    let layout = client.layout(&pane_id)?;
-    let geometry = OverlayGeometry::locate(&layout, &pane_id)?;
-    let mut env = BTreeMap::new();
-    env.insert(
-        GEOMETRY_ENV.to_string(),
-        serde_json::to_string(&geometry).expect("geometry serializes"),
-    );
-    if let Some(names) = option_value(args, "--patterns")? {
-        let names: Vec<&str> = names.split(',').map(str::trim).collect();
-        patterns::builtin_specs(&names)?;
-        env.insert(PATTERNS_ENV.to_string(), names.join(","));
-    }
-    client.open_plugin_pane(&context.plugin_id, OVERLAY_ENTRYPOINT, env)?;
+    let patterns = option_value(args, "--patterns")?
+        .map(|names| names.split(',').map(str::trim).collect::<Vec<_>>());
+    start::start(&client, &context.plugin_id, &pane_id, patterns.as_deref())?;
     Ok(())
 }
 
@@ -87,8 +69,8 @@ pub fn ui() -> Result<(), AppError> {
 
 fn run_overlay(context: &PluginContext) -> Result<(), AppError> {
     let client = HerdrClient::from_env()?;
-    let geometry: Option<OverlayGeometry> = match std::env::var(GEOMETRY_ENV) {
-        Ok(json) => Some(serde_json::from_str(&json).map_err(AppError::BadGeometry)?),
+    let geometry = match std::env::var(GEOMETRY_ENV) {
+        Ok(text) => Some(OverlayGeometry::decode(&text)?),
         Err(_) => None,
     };
     let pane_id = geometry
@@ -96,14 +78,6 @@ fn run_overlay(context: &PluginContext) -> Result<(), AppError> {
         .map(|g| g.pane_id.clone())
         .or_else(|| context.focused_pane_id.clone())
         .ok_or(AppError::NoFocusedPane)?;
-    let width = match &geometry {
-        Some(geometry) => geometry.pane.width,
-        None => client
-            .layout(&pane_id)
-            .ok()
-            .and_then(|layout| layout.panes.into_iter().find(|p| p.pane_id == pane_id))
-            .map_or(0, |p| p.rect.width),
-    };
 
     let (mut settings, notice) = match config::load(context.config_dir.as_deref()) {
         Ok(settings) => (settings, None),
@@ -120,26 +94,22 @@ fn run_overlay(context: &PluginContext) -> Result<(), AppError> {
         settings.patterns = PatternSet::compile(&patterns::builtin_specs(&names)?)?;
     }
 
-    let screen = Screen::from_ansi(&client.read_visible(&pane_id)?, width);
-    let candidates = find_candidates(&screen, &settings.patterns);
-    let mut session = Session::new(candidates, &settings.alphabet);
-
-    let outcome = tui::run(
-        &screen,
-        &mut session,
-        &settings.theme,
-        geometry.as_ref(),
-        notice.as_deref(),
-    )?;
-
-    if let Outcome::Picked(selection) = outcome {
-        let ctx = ActionContext {
-            client: &client,
-            pane_id: &pane_id,
-            cwd: client.pane_cwd(&pane_id).unwrap_or(None),
-            settings: &settings,
-        };
-        let message = actions::perform(&selection, &ctx)?;
+    let mut clipboard =
+        SystemClipboard::new(settings.clipboard, settings.clipboard_command.clone());
+    let mut picker = TerminalPicker;
+    let request = PickRequest {
+        pane_id: &pane_id,
+        geometry: geometry.as_ref(),
+        settings: &settings,
+        notice: notice.as_deref(),
+    };
+    let mut deps = Deps {
+        host: &client,
+        clipboard: &mut clipboard,
+        launcher: &SystemLauncher,
+        picker: &mut picker,
+    };
+    if let Picked::Done(message) = pick::pick(&request, &mut deps)? {
         log::append(context.state_dir.as_deref(), &message);
     }
     Ok(())

@@ -1,9 +1,10 @@
-//! The kernel under `src/domain` may not know about the terminal, Herdr, the
-//! clipboard, processes or files. This is the Dependency Rule, enforced.
+//! The kernel under `src/domain` and the use cases under `src/usecases` may
+//! not know about the terminal, Herdr, the clipboard, processes or files.
+//! This is the Dependency Rule, enforced.
 
 use std::path::Path;
 
-const FORBIDDEN_IN_DOMAIN: &[&str] = &[
+const FORBIDDEN_INSIDE: &[&str] = &[
     "crate::adapters",
     "crate::app",
     "ratatui",
@@ -30,17 +31,16 @@ fn rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-#[test]
-fn the_domain_depends_on_nothing_outside_itself() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/domain");
+fn violations_under(ring: &str, extra_forbidden: &[&str]) -> Vec<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(ring);
     let mut files = Vec::new();
     rust_files(&root, &mut files);
-    assert!(!files.is_empty(), "no domain files found");
+    assert!(!files.is_empty(), "no files found under {ring}");
     let mut violations = Vec::new();
     for file in files {
         let source = std::fs::read_to_string(&file).expect("readable source");
         for (number, line) in source.lines().enumerate() {
-            for forbidden in FORBIDDEN_IN_DOMAIN {
+            for forbidden in FORBIDDEN_INSIDE.iter().chain(extra_forbidden) {
                 if line.contains(forbidden) {
                     violations.push(format!(
                         "{}:{}: uses `{forbidden}`",
@@ -51,9 +51,25 @@ fn the_domain_depends_on_nothing_outside_itself() {
             }
         }
     }
+    violations
+}
+
+#[test]
+fn the_domain_depends_on_nothing_outside_itself() {
+    let violations = violations_under("src/domain", &["crate::usecases"]);
     assert!(
         violations.is_empty(),
         "the kernel reaches outward:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn the_use_cases_depend_only_on_the_domain_and_their_ports() {
+    let violations = violations_under("src/usecases", &[]);
+    assert!(
+        violations.is_empty(),
+        "a use case reaches outward:\n{}",
         violations.join("\n")
     );
 }
