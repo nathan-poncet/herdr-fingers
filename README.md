@@ -12,16 +12,9 @@ scrolling back to find the thing.
 ![Linux and macOS](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-c084fc)
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S3V726AT7H)
 
-```text
-$ git status
-On branch main
-Your branch is up to date with 'dorigin/main'.          ← hint "d"
-        modified:   ssrc/domain/session.rs              ← hint "s"
-        new file:   adocs/ARCHITECTURE.md               ← hint "a"
+![herdr-fingers in action: hints over a git status, a path pasted with Shift, two commits multi-selected, URLs labelled](assets/demo.gif)
 
-$ cargo test
-   Compiling herdr-fingers v0.1.0 (f/Users/nathan/herdr-fingers)   ← hint "f"
-```
+*Copy a path, paste another with Shift, multi-select two commits with Tab, label URLs. [Watch it as a video.](https://github.com/nathan-poncet/herdr-fingers/raw/main/assets/demo.mp4)*
 
 A port of [tmux-fingers](https://github.com/Morantron/tmux-fingers) to
 Herdr, written in Rust from the ground up: same patterns, same keyboard
