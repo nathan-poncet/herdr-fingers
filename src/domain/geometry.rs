@@ -1,11 +1,10 @@
 //! Where the captured pane sits inside the overlay, so hints land exactly on
 //! the text they describe even when the tab is split.
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A rectangle in terminal cells.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rect {
     pub x: u16,
     pub y: u16,
@@ -74,10 +73,12 @@ pub enum GeometryError {
     EmptyRect,
     #[error("pane {0} lies outside the tab area")]
     OutsideArea(String),
+    #[error("malformed overlay geometry `{0}`")]
+    Malformed(String),
 }
 
 /// The source pane's rectangle relative to the overlay's top-left corner.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverlayGeometry {
     pub pane_id: String,
     pub area: Rect,
@@ -115,6 +116,36 @@ impl OverlayGeometry {
         })
     }
 
+    /// A compact form fit for an environment variable:
+    /// `pane_id|x,y,width,height|x,y,width,height` (area, then pane).
+    pub fn encode(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            self.pane_id,
+            encode_rect(&self.area),
+            encode_rect(&self.pane)
+        )
+    }
+
+    pub fn decode(text: &str) -> Result<Self, GeometryError> {
+        let malformed = || GeometryError::Malformed(text.to_string());
+        let mut parts = text.split('|');
+        let pane_id = parts
+            .next()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(malformed)?;
+        let area = parts.next().and_then(decode_rect).ok_or_else(malformed)?;
+        let pane = parts.next().and_then(decode_rect).ok_or_else(malformed)?;
+        if parts.next().is_some() {
+            return Err(malformed());
+        }
+        Ok(OverlayGeometry {
+            pane_id: pane_id.to_string(),
+            area,
+            pane,
+        })
+    }
+
     /// The cells of `frame` the captured pane is redrawn into (clipped).
     pub fn content_rect(&self, frame: Rect) -> Rect {
         Rect::new(
@@ -149,6 +180,21 @@ impl OverlayGeometry {
         };
         Some(strip.intersection(frame)).filter(|r| !r.is_empty())
     }
+}
+
+fn encode_rect(rect: &Rect) -> String {
+    format!("{},{},{},{}", rect.x, rect.y, rect.width, rect.height)
+}
+
+fn decode_rect(text: &str) -> Option<Rect> {
+    let mut numbers = text.split(',').map(|n| n.parse::<u16>().ok());
+    let rect = Rect::new(
+        numbers.next()??,
+        numbers.next()??,
+        numbers.next()??,
+        numbers.next()??,
+    );
+    numbers.next().is_none().then_some(rect)
 }
 
 #[cfg(test)]
@@ -215,6 +261,34 @@ mod tests {
     fn a_full_frame_pane_leaves_no_status_strip() {
         let geometry = OverlayGeometry::locate(&layout(true), "left").unwrap();
         assert_eq!(geometry.status_rect(Rect::new(0, 0, 100, 40)), None);
+    }
+
+    #[test]
+    fn geometry_survives_a_round_trip_through_its_text_form() {
+        let geometry = OverlayGeometry::locate(&layout(false), "right").unwrap();
+        let text = geometry.encode();
+        assert_eq!(text, "right|20,2,100,40|51,21,49,19");
+        assert_eq!(OverlayGeometry::decode(&text), Ok(geometry));
+    }
+
+    #[test]
+    fn malformed_geometry_text_is_rejected() {
+        for text in [
+            "",
+            "right",
+            "right|1,2,3|4,5,6,7",
+            "right|1,2,3,4|5,6,7",
+            "right|1,2,3,4|5,6,7,8|extra",
+            "|1,2,3,4|5,6,7,8",
+        ] {
+            assert!(
+                matches!(
+                    OverlayGeometry::decode(text),
+                    Err(GeometryError::Malformed(_))
+                ),
+                "{text:?}"
+            );
+        }
     }
 
     #[test]

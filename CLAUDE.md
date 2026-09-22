@@ -4,16 +4,19 @@ tmux-fingers for Herdr (Rust, Clean Architecture, TDD). Architecture rules:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The essentials:
 
 ## Language & history
-- Code, comments and commit messages in **English**. French docs mirror under `docs/fr/`.
+- Code, comments and commit messages in **English**.
 - Prefix commits and issues with a **Gitmoji** (📝 docs, ✨ feat, 🐛 fix, ✅ tests, ♻️ refactor, 👷 ci, 🔒 security…).
 
 ## Design
 - `src/domain/` is the kernel: pure, synchronous, deterministic. It may use `regex`,
-  `unicode-width`, `serde` derives and `thiserror`, nothing else — no I/O, no
-  processes, no terminal, no Herdr. `tests/dependency_rule.rs` enforces it.
-- `src/adapters/` talks to the outside world behind small typed surfaces
-  (Herdr socket, clipboard, terminal, config file, actions). `src/app.rs` is the
-  composition root, one function per CLI subcommand.
+  `unicode-width` and `thiserror`, nothing else — no I/O, no processes, no terminal,
+  no Herdr. `src/usecases/` (`start`, `pick`) orchestrates against the ports in
+  `usecases/ports.rs` (`PaneHost`, `Clipboard`, `Launcher`, `Picker`) and is just as
+  pure. `tests/dependency_rule.rs` enforces both.
+- `src/adapters/` implements the ports (Herdr socket, ratatui picker, clipboard,
+  processes) plus the config file and the log. `src/app.rs` is the composition root,
+  one function per CLI subcommand: build adapters, call a use case, log.
+- A new side effect gets a port method and a fake in `usecases/testing.rs` first.
 - The renderer is a pure function of a `View`; the event loop only maps keys to
   kernel `Key`s and feeds the `Session` state machine.
 - Newtypes and enums over strings and bools; validate at the edge (config.rs), so

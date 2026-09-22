@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use herdr_fingers::adapters::herdr::DEFAULT_PLUGIN_ID;
-use herdr_fingers::app::OVERLAY_TITLE;
+use herdr_fingers::usecases::start::OVERLAY_TITLE;
 
 fn manifest() -> toml::Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("herdr-plugin.toml");

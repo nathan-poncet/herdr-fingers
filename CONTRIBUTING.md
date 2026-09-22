@@ -46,18 +46,22 @@ Clean Architecture in one crate — the rings are folders:
 
 | Ring | Folder | May use |
 |---|---|---|
-| Kernel | `src/domain/` | `regex`, `unicode-width`, `serde` derives, `thiserror` — **no I/O** |
-| Adapters | `src/adapters/` | Herdr socket, terminal (ratatui/crossterm), clipboard, files, processes |
+| Kernel | `src/domain/` | `regex`, `unicode-width`, `thiserror` — **no I/O** |
+| Use cases | `src/usecases/` | the kernel and the ports it declares in `ports.rs` — **no I/O** |
+| Adapters | `src/adapters/` | implement the ports with the Herdr socket, ratatui/crossterm, the clipboard, files, processes |
 | Composition root | `src/app.rs`, `src/main.rs` | anything |
 
-`tests/dependency_rule.rs` fails if the kernel imports an adapter, ratatui,
-crossterm, `std::io`, `std::fs`, `std::process`… Full rules and a walk
-through one key press: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+`tests/dependency_rule.rs` fails if the kernel or a use case imports an
+adapter, ratatui, crossterm, `std::io`, `std::fs`, `std::process`… Full
+rules and a walk through one key press: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Ground rules:
 
 - **Validate at the edge.** `adapters/config.rs` turns the TOML into typed
   `Settings`; the kernel never sees a string it has to interpret.
+- **Use cases own the flow.** `usecases/pick.rs` decides what to read, how
+  to label and what an action does; adapters only carry it out. A new
+  side effect goes through a port, with a fake in `usecases/testing.rs`.
 - **Render is pure.** `tui::render` takes a `View` and paints a buffer; the
   event loop only maps keys and feeds the `Session` state machine.
 - **Fail soft in the overlay.** A bad `config.toml` falls back to defaults
@@ -70,17 +74,17 @@ TDD is the house style: write the failing test first.
 
 - Test names state behaviour: `a_row_filling_the_width_joins_the_next_row`,
   never `test_screen_1`.
-- Deterministic always: the Herdr client is tested against a fake server on
-  a Unix socket in a temp directory; the renderer against ratatui's
-  `TestBackend`; actions against `sh -c` writing to temp files. No real
-  Herdr, no real clipboard, no sleeps.
+- Deterministic always: use cases run against the in-memory fakes in
+  `usecases/testing.rs`; the Herdr client against a fake server on a Unix
+  socket in a temp directory; the renderer against ratatui's `TestBackend`;
+  the launcher against `sh -c` writing to temp files. No real Herdr, no
+  real clipboard, no sleeps.
 - A new built-in pattern gets a row in `each_builtin_recognises_its_canonical_example`
-  and a line in both READMEs.
+  and a line in the README.
 
 ## Commits & PRs
 
-- Code, comments and commit messages are in **English**; French docs mirror
-  under `docs/fr/` and must be updated in the same PR.
+- Code, comments and commit messages are in **English**.
 - Prefix commit subjects with a [Gitmoji](https://gitmoji.dev): ✨ feature,
   🐛 fix, ♻️ refactor, ✅ tests, 📝 docs, 👷 CI, 🔒 security…
 - Keep PRs focused: one feature or fix per PR, with tests for behaviour

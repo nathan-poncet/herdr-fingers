@@ -1,8 +1,9 @@
-//! Everything that touches the outside world, behind small typed surfaces.
+//! Everything that touches the outside world, implementing the use cases'
+//! ports behind small typed surfaces.
 
-pub mod actions;
 pub mod clipboard;
 pub mod config;
 pub mod herdr;
 pub mod log;
+pub mod system;
 pub mod tui;

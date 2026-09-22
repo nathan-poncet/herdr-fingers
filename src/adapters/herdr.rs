@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::domain::geometry::{Layout, PanePlacement, Rect};
+use crate::usecases::ports::{PaneHost, PortError};
 
 #[derive(Debug, Error)]
 pub enum HerdrError {
@@ -236,6 +237,47 @@ impl HerdrClient {
             json!({ "title": title, "body": body, "sound": "none" }),
         )?;
         Ok(())
+    }
+}
+
+impl From<HerdrError> for PortError {
+    fn from(error: HerdrError) -> Self {
+        PortError::new(error)
+    }
+}
+
+impl PaneHost for HerdrClient {
+    fn layout(&self, pane_id: &str) -> Result<Layout, PortError> {
+        Ok(HerdrClient::layout(self, pane_id)?)
+    }
+
+    fn read_visible(&self, pane_id: &str) -> Result<String, PortError> {
+        Ok(HerdrClient::read_visible(self, pane_id)?)
+    }
+
+    fn pane_label(&self, pane_id: &str) -> Result<Option<String>, PortError> {
+        Ok(HerdrClient::pane_label(self, pane_id)?)
+    }
+
+    fn pane_cwd(&self, pane_id: &str) -> Result<Option<PathBuf>, PortError> {
+        Ok(HerdrClient::pane_cwd(self, pane_id)?)
+    }
+
+    fn open_overlay(
+        &self,
+        plugin_id: &str,
+        entrypoint: &str,
+        env: BTreeMap<String, String>,
+    ) -> Result<String, PortError> {
+        Ok(self.open_plugin_pane(plugin_id, entrypoint, env)?)
+    }
+
+    fn send_text(&self, pane_id: &str, text: &str) -> Result<(), PortError> {
+        Ok(HerdrClient::send_text(self, pane_id, text)?)
+    }
+
+    fn notify(&self, title: &str, body: &str) -> Result<(), PortError> {
+        Ok(HerdrClient::notify(self, title, body)?)
     }
 }
 

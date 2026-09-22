@@ -7,6 +7,7 @@ use base64::Engine;
 use thiserror::Error;
 
 use crate::domain::settings::ClipboardMode;
+use crate::usecases::ports::{Clipboard, PortError};
 
 #[derive(Debug, Error)]
 pub enum ClipboardError {
@@ -18,6 +19,25 @@ pub enum ClipboardError {
     NoCommand,
     #[error("clipboard command `{0}` failed")]
     CommandFailed(String),
+}
+
+/// The clipboard the settings ask for: OSC 52, a local command, or both.
+#[derive(Debug, Clone)]
+pub struct SystemClipboard {
+    mode: ClipboardMode,
+    command: Vec<String>,
+}
+
+impl SystemClipboard {
+    pub fn new(mode: ClipboardMode, command: Vec<String>) -> Self {
+        SystemClipboard { mode, command }
+    }
+}
+
+impl Clipboard for SystemClipboard {
+    fn copy(&mut self, text: &str) -> Result<(), PortError> {
+        copy(text, self.mode, &self.command).map_err(PortError::new)
+    }
 }
 
 /// The OSC 52 sequence that asks the terminal to set its clipboard.
@@ -121,6 +141,24 @@ mod tests {
         let command = vec!["sh".to_string(), "-c".to_string(), "exit 3".to_string()];
         let error = copy("x", ClipboardMode::System, &command).unwrap_err();
         assert!(matches!(error, ClipboardError::CommandFailed(name) if name.starts_with("sh -c")));
+    }
+
+    #[test]
+    fn the_port_implementation_uses_the_configured_command() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let target = std::env::temp_dir().join(format!("herdr-fingers-port-{unique}"));
+        let command = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("cat > '{}'", target.display()),
+        ];
+        let mut clipboard = SystemClipboard::new(ClipboardMode::System, command);
+        clipboard.copy("via port").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "via port");
+        let _ = std::fs::remove_file(target);
     }
 
     #[test]

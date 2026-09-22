@@ -26,7 +26,6 @@ $ cargo test
 A port of [tmux-fingers](https://github.com/Morantron/tmux-fingers) to
 Herdr, written in Rust from the ground up: same patterns, same keyboard
 layouts, same actions and multi-select, running as a native Herdr plugin.
-([Français](docs/fr/README.md))
 
 ## Install
 
@@ -214,17 +213,17 @@ herdr plugin link "$PWD"
 ```
 
 `cargo test` runs the suite: the ANSI parser, wrapped-row joining, every
-built-in pattern, hint generation, the picking state machine, the config
-loader, the Herdr client against a fake socket, and the renderer on a
-ratatui test backend. `cargo fmt --check` and
+built-in pattern, hint generation, the picking state machine, the two use
+cases against in-memory fakes, the config loader, the Herdr client against
+a fake socket, and the renderer on a ratatui test backend. `cargo fmt --check` and
 `cargo clippy --all-targets -- -D warnings` must be clean; CI runs all of it
 on Linux and macOS.
 
-The code follows a small Clean Architecture: a pure kernel under
-`src/domain/` (no I/O, enforced by a test) and adapters for Herdr, the
-terminal, the clipboard and the config file. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-([français](docs/fr/ARCHITECTURE.md)).
+The code follows Clean Architecture in one crate: a pure kernel under
+`src/domain/`, use cases under `src/usecases/` that only see ports, and
+adapters implementing those ports for Herdr, the terminal, the clipboard
+and processes. A test enforces the Dependency Rule. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Contributing
 
