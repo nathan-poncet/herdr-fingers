@@ -48,19 +48,18 @@ env.update(
     LANG="en_US.UTF-8",
 )
 
-pid, fd = pty.fork()
-if pid == 0:
-    os.chdir(repo)
-    os.execvpe("herdr", ["herdr", "--session", SESSION], env)
-
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
-start = time.time()
-cast = open(out_path, "w")
-header = {"version": 2, "width": COLS, "height": ROWS, "timestamp": int(start), "title": "herdr-fingers"}
-cast.write(json.dumps(header) + "\n")
+def attach():
+    """Starts a Herdr client (and the session's server if needed) in a PTY."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(repo)
+        os.execvpe("herdr", ["herdr", "--session", SESSION], env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
+    return pid, fd
 
 
-def pump(seconds):
+def drain(fd, seconds, sink=None):
+    """Reads the PTY for `seconds`, appending to the cast when `sink` is set."""
     end = time.time() + seconds
     while True:
         remaining = end - time.time()
@@ -74,7 +73,39 @@ def pump(seconds):
                 return
             if not data:
                 return
-            cast.write(json.dumps([round(time.time() - start, 4), "o", data.decode("utf-8", "replace")]) + "\n")
+            if sink is not None:
+                sink(data)
+
+
+# Warm-up, off camera: a first attach dismisses Herdr's welcome screen when
+# it shows, clears the pane and leaves it on a single fresh prompt.
+warm_pid, warm_fd = attach()
+drain(warm_fd, 2.5)
+os.write(warm_fd, b"\r")
+drain(warm_fd, 0.8)
+os.write(warm_fd, b"clear\r")
+drain(warm_fd, 0.8)
+os.write(warm_fd, PREFIX.encode())
+drain(warm_fd, 0.2)
+os.write(warm_fd, b"q")
+drain(warm_fd, 1.0)
+os.waitpid(warm_pid, 0)
+
+pid, fd = attach()
+start = time.time()
+cast = open(out_path, "w")
+header = {"version": 2, "width": COLS, "height": ROWS, "timestamp": int(start), "title": "herdr-fingers"}
+cast.write(json.dumps(header) + "\n")
+
+
+def pump(seconds):
+    drain(
+        fd,
+        seconds,
+        lambda data: cast.write(
+            json.dumps([round(time.time() - start, 4), "o", data.decode("utf-8", "replace")]) + "\n"
+        ),
+    )
 
 
 def key(data, pause=0.0):
@@ -100,9 +131,7 @@ def fingers(pause=1.2):
 
 # Hints below assume the qwerty layout and this exact screen content: the
 # bottom-most match gets "a", then "s", "d", "f", "w", "e" going up.
-pump(2.5)  # client + server start
-key("\r", 1.0)  # dismiss Herdr's welcome, if shown
-type_text("clear"); enter(0.6)
+pump(2.0)  # the client draws the existing pane
 type_text("git status"); enter(1.4)
 fingers(1.6); key("s", 1.3)  # copy src/api/router.rs
 type_text("nvim ", pause=0.5)

@@ -10,6 +10,7 @@ scrolling back to find the thing.
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 ![Herdr 0.7+](https://img.shields.io/badge/Herdr-0.7%2B-66b3ff)
 ![Linux and macOS](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-c084fc)
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S3V726AT7H)
 
 ![herdr-fingers in action: hints over a git status, a path pasted with Shift, two commits multi-selected, URLs labelled](assets/demo.gif)
