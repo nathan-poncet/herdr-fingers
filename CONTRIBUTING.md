@@ -93,6 +93,24 @@ TDD is the house style: write the failing test first.
   [CHANGELOG.md](CHANGELOG.md); the release moves that section under the
   new version and its notes are taken from it.
 
+## Re-recording the demo
+
+`assets/demo.gif` and `assets/demo.mp4` come out of `scripts/demo/`: a
+private Herdr session (`fingers-demo`, its own `herdr-config.toml` with
+`prefix+f` bound) is driven in a pseudo-terminal by `record.py`, which types
+the commands and hints and writes an asciicast. Needs
+[`agg`](https://github.com/asciinema/agg), `ffmpeg` and `fish`:
+
+```sh
+./scripts/demo/make-sample-repo.sh /tmp/sample-app
+./scripts/demo/record.py /tmp/sample-app demo.cast
+agg --theme github-dark --font-size 14 --idle-time-limit 3 demo.cast assets/demo.gif
+ffmpeg -i assets/demo.gif -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15" assets/demo.mp4
+```
+
+The hint letters in `record.py` are tied to that screen content; if you
+change the commands, read the hints off a first recording and adjust.
+
 ## Releasing
 
 1. Move the `[Unreleased]` entries under a new version heading in `CHANGELOG.md`.

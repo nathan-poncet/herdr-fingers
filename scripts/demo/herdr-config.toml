@@ -1,0 +1,26 @@
+onboarding = false
+[ui]
+sidebar_start_collapsed = true
+sidebar_collapsed_mode = "hidden"
+pane_outer_borders = false
+pane_scrollbars = false
+hide_tab_bar_when_single_tab = true
+confirm_close = false
+prompt_new_tab_name = false
+
+[update]
+version_check = false
+manifest_check = false
+
+[[keys.command]]
+key = "prefix+f"
+type = "plugin_action"
+command = "nathan-poncet.herdr-fingers.start"
+description = "copy with hints"
+
+[ui.toast]
+delivery = "herdr"
+
+[ui.toast.clipboard]
+enabled = true
+position = "bottom-right"
