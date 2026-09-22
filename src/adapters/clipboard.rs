@@ -59,7 +59,9 @@ fn run_command(text: &str, command: &[String]) -> Result<(), ClipboardError> {
         .spawn()
         .map_err(|_| ClipboardError::CommandFailed(argv.join(" ")))?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(text.as_bytes())?;
+        // A command that exits early closes the pipe; its exit status is the
+        // verdict, not the broken pipe.
+        let _ = stdin.write_all(text.as_bytes());
     }
     let status = child.wait()?;
     if status.success() {
